@@ -1,7 +1,6 @@
 import sqlite3
 
 def create_connection():
-    """إنشاء اتصال بقاعدة البيانات وإرجاع الاتصال."""
     conn = None
     try:
         conn = sqlite3.connect('portfolio.db')
@@ -10,11 +9,7 @@ def create_connection():
     return conn
 
 def create_table(conn):
-    """
-    إنشاء جدول المحفظة إذا لم يكن موجودًا، مع إضافة حقل العمولة.
-    """
     try:
-        # أضفنا حقل commission
         sql_create_portfolio_table = """ CREATE TABLE IF NOT EXISTS portfolio (
                                             id integer PRIMARY KEY,
                                             symbol text NOT NULL,
@@ -29,8 +24,6 @@ def create_table(conn):
         print(e)
 
 def add_transaction(conn, transaction):
-    """إضافة معاملة شراء جديدة إلى المحفظة مع العمولة."""
-    # تم تحديث الأمر ليشمل 5 متغيرات
     sql = ''' INSERT INTO portfolio(symbol,quantity,buy_price,commission,buy_date)
               VALUES(?,?,?,?,?) '''
     cur = conn.cursor()
@@ -39,7 +32,6 @@ def add_transaction(conn, transaction):
     return cur.lastrowid
 
 def get_portfolio(conn):
-    """استرجاع كل الأسهم من المحفظة مع العمولة."""
     cur = conn.cursor()
     cur.execute("SELECT * FROM portfolio")
     rows = cur.fetchall()
@@ -51,7 +43,7 @@ def get_portfolio(conn):
             "السهم": row[1],
             "الكمية": row[2],
             "سعر الشراء": row[3],
-            "العمولة": row[4], # تمت إضافة العمولة هنا
+            "العمولة": row[4],
             "تاريخ الشراء": row[5]
         })
     return portfolio_list
