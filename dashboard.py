@@ -17,16 +17,13 @@ if conn is not None:
 # --- تعريف الوظائف التحليلية ---
 @st.cache_data(ttl="10m")
 def get_stock_data(symbol):
-    """يجلب بيانات السهم ويحسب المؤشرات مع حل لمشكلة الأبعاد."""
+    """يجلب بيانات السهم ويحسب المؤشرات."""
     try:
         data = yf.download(symbol, period="1y", progress=False, auto_adjust=True)
         if data.empty:
             return None, f"لم يتم العثور على بيانات للسهم {symbol}"
         
-        # الإصلاح النهائي لمشكلة الأبعاد
         close_prices = pd.Series(data['Close'].values)
-        
-        # حساب المؤشرات
         data['RSI'] = ta.momentum.RSIIndicator(close=close_prices).rsi()
         macd = ta.trend.MACD(close=close_prices)
         data['MACD'] = macd.macd()
@@ -52,6 +49,7 @@ with tab1:
     if not portfolio_data:
         st.info("محفظتك فارغة. قم بإضافة أول عملية شراء.")
     else:
+        # (الكود لعرض المحفظة يبقى كما هو)
         total_investment = 0.0
         current_value = 0.0
         error_messages = []
@@ -61,17 +59,13 @@ with tab1:
             if error:
                 error_messages.append(f"⚠️ فشل تحديث سعر سهم **{stock['السهم']}**. السبب: {error}")
                 stock['السعر الحالي'] = "خطأ"
-                stock['الربح/الخسارة'] = "N/A"
-                stock['نسبة التغيير %'] = "N/A"
             else:
                 current_price = stock_data_live['Close'].iloc[-1]
                 stock['السعر الحالي'] = f"{current_price:.2f}"
                 buy_cost = (stock['الكمية'] * stock['سعر الشراء']) + stock['العمولة']
                 current_stock_value = stock['الكمية'] * current_price
                 profit_loss = current_stock_value - buy_cost
-                profit_loss_percent = (profit_loss / buy_cost) * 100 if buy_cost != 0 else 0
                 stock['الربح/الخسارة'] = f"{profit_loss:.2f}"
-                stock['نسبة التغيير %'] = f"{profit_loss_percent:.2f}"
                 total_investment += buy_cost
                 current_value += current_stock_value
         
@@ -84,47 +78,41 @@ with tab1:
             st.metric("القيمة الحالية للمحفظة", f"{current_value:.2f} ريال", f"{total_profit_loss:.2f} ريال (صافي)")
 
         df_portfolio = pd.DataFrame(portfolio_data)
-        display_cols = ['السهم', 'الكمية', 'سعر الشراء', 'العمولة', 'السعر الحالي', 'الربح/الخسارة', 'نسبة التغيير %']
+        display_cols = ['السهم', 'الكمية', 'سعر الشراء', 'العمولة', 'السعر الحالي', 'الربح/الخسارة']
         st.dataframe(df_portfolio[display_cols].set_index('السهم'), use_container_width=True)
 
+
+    # --- نموذج الإضافة المصحح ---
     with st.expander("➕ إضافة عملية شراء جديدة"):
         config = configparser.ConfigParser()
         config.read('config.ini')
-        
         stocks_dict = dict(config['TadawulStocks'].items())
         display_list = [f"{symbol} - {name}" for symbol, name in stocks_dict.items()]
         
-        t_symbol_display = st.selectbox("اختر السهم", display_list, key="stock_selector_form")
-        
-        # --- المنطق المصحح لميزة السعر المرن ---
-        current_market_price = 0.0
-        if t_symbol_display:
-            t_symbol_for_price = t_symbol_display.split(' - ')[0]
-            price_data, price_error = get_stock_data(t_symbol_for_price)
-            if price_data is not None:
-                current_market_price = price_data['Close'].iloc[-1]
-        
-        st.info(f"سعر السوق الحالي هو: **{current_market_price:.2f}** ريال")
-        
+        # استخدام st.form يحل المشكلتين
         with st.form("new_transaction_form", clear_on_submit=True):
-            # نحتاج لقراءة السهم المختار مرة أخرى داخل النموذج
-            selected_symbol_in_form = st.session_state.stock_selector_form
-            symbol_to_add = selected_symbol_in_form.split(' - ')[0]
-
+            st.write("أدخل تفاصيل الصفقة الجديدة:")
+            
+            t_symbol_display = st.selectbox("اختر السهم", display_list)
             t_quantity = st.number_input("أدخل الكمية", min_value=0.1, step=0.1)
-            t_buy_price = st.number_input("أدخل سعر الشراء", min_value=0.01, value=current_market_price, step=0.01, format="%.2f")
+            t_buy_price = st.number_input("أدخل سعر الشراء", min_value=0.01, step=0.01, format="%.2f")
             t_commission = st.number_input("أدخل عمولة الشراء", min_value=0.0, step=0.01)
-            submitted = st.form_submit_button("إضافة")
+            
+            # زر الإضافة يكون دائمًا آخر عنصر داخل الـ form
+            submitted = st.form_submit_button("إضافة الصفقة")
 
             if submitted:
+                symbol_to_add = t_symbol_display.split(' - ')[0]
                 transaction = (symbol_to_add, t_quantity, t_buy_price, t_commission, date.today().strftime("%Y-%m-%d"))
                 db.add_transaction(conn, transaction)
                 st.success(f"تمت إضافة {t_quantity} سهم من {symbol_to_add} إلى محفظتك.")
-                st.cache_data.clear()
+                st.cache_data.clear() # مسح الكاش مهم بعد كل إضافة
                 st.rerun()
+
 
 # --- التبويب الثاني: نظرة على السوق ---
 with tab2:
+    # الكود الخاص بهذا التبويب يبقى كما هو
     st.header("نظرة شاملة على السوق")
     config = configparser.ConfigParser()
     config.read('config.ini')
@@ -162,6 +150,7 @@ with tab2:
         st.dataframe(df_market.set_index('السهم'), use_container_width=True)
     else:
         st.warning("لم يتم العثور على بيانات لأي سهم.")
+
 
 # --- التبويب الثالث: فرص استثمارية (AI) ---
 with tab3:
