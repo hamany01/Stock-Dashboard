@@ -4,7 +4,8 @@ import yfinance as yf
 import pandas as pd
 import ta
 import database as db
-from datetime import date
+import investpy
+from datetime import date, timedelta
 
 st.set_page_config(page_title="مدير المحفظة الذكي", layout="wide")
 st.title("📊 مدير المحفظة الذكي للسوق السعودي")
@@ -17,21 +18,40 @@ if conn is not None:
 # --- تعريف الوظائف التحليلية ---
 @st.cache_data(ttl="10m")
 def get_stock_data(symbol):
-    """يجلب بيانات السهم ويحسب المؤشرات."""
+    """
+    يجلب بيانات السهم من yfinance، وإذا فشل، يجرب investpy كمصدر احتياطي.
+    """
     try:
+        # --- المصدر الأول: yfinance ---
         data = yf.download(symbol, period="1y", progress=False, auto_adjust=True)
         if data.empty:
-            return None, f"لم يتم العثور على بيانات للسهم {symbol}"
-        
+            raise ValueError("yfinance did not return data")
+    except Exception as e:
+        try:
+            # --- المصدر الثاني: investpy ---
+            st.warning(f"المصدر الأول فشل لسهم {symbol}، جاري محاولة المصدر الاحتياطي...")
+            end_date = date.today()
+            start_date = end_date - timedelta(days=365)
+            search_result = investpy.search_quotes(text=symbol.split('.')[0], products=['stocks'], countries=['saudi arabia'], n_results=1)
+            data = search_result.retrieve_historical_data(from_date=start_date.strftime('%d/%m/%Y'), to_date=end_date.strftime('%d/%m/%Y'))
+            if data.empty:
+                return None, f"فشل المصدران لجلب بيانات {symbol}"
+        except Exception as e_investpy:
+            return None, f"فشل المصدران لجلب بيانات {symbol}: {e_investpy}"
+            
+    # --- حساب المؤشرات (مشترك بين المصدرين) ---
+    try:
         close_prices = pd.Series(data['Close'].values)
         data['RSI'] = ta.momentum.RSIIndicator(close=close_prices).rsi()
         macd = ta.trend.MACD(close=close_prices)
         data['MACD'] = macd.macd()
         data['MACD_signal'] = macd.macd_signal()
-        
         return data, None
-    except Exception as e:
-        return None, str(e)
+    except Exception as e_ta:
+        return None, f"نجح جلب البيانات ولكن فشل التحليل الفني: {e_ta}"
+
+# --- بقية الكود يبقى كما هو ---
+# (الكود الخاص بالتبويبات والمحفظة)
 
 # --- تصميم الواجهة باستخدام علامات التبويب ---
 tab1, tab2, tab3 = st.tabs(["محفظتي", "نظرة على السوق", "فرص استثمارية (AI)"])
@@ -55,22 +75,17 @@ with tab1:
 
         for stock in portfolio_data:
             stock_data_live, error = get_stock_data(stock['السهم'])
-            
-            # --- هذا هو الجزء الذي تم تعديله ---
             if error:
                 error_messages.append(f"⚠️ فشل تحديث سعر سهم **{stock['السهم']}**.")
                 stock['السعر الحالي'] = "خطأ"
                 stock['الربح/الخسارة'] = "N/A"
-                stock['نسبة التغيير %'] = "N/A" # إضافة الخانة الناقصة
             else:
                 current_price = stock_data_live['Close'].iloc[-1]
                 stock['السعر الحالي'] = f"{current_price:.2f}"
                 buy_cost = (stock['الكمية'] * stock['سعر الشراء']) + stock['العمولة']
                 current_stock_value = stock['الكمية'] * current_price
                 profit_loss = current_stock_value - buy_cost
-                profit_loss_percent = (profit_loss / buy_cost) * 100 if buy_cost != 0 else 0
                 stock['الربح/الخسارة'] = f"{profit_loss:.2f}"
-                stock['نسبة التغيير %'] = f"{profit_loss_percent:.2f}" # إضافة الخانة الناقصة
                 total_investment += buy_cost
                 current_value += current_stock_value
         
@@ -83,12 +98,7 @@ with tab1:
             st.metric("القيمة الحالية للمحفظة", f"{current_value:.2f} ريال", f"{total_profit_loss:.2f} ريال (صافي)")
 
         df_portfolio = pd.DataFrame(portfolio_data)
-        # التأكد من أن جميع الأعمدة المطلوبة موجودة قبل عرضها
-        display_cols = ['السهم', 'الكمية', 'سعر الشراء', 'العمولة', 'السعر الحالي', 'الربح/الخسارة', 'نسبة التغيير %']
-        for col in display_cols:
-            if col not in df_portfolio.columns:
-                df_portfolio[col] = "N/A"
-
+        display_cols = ['السهم', 'الكمية', 'سعر الشراء', 'العمولة', 'السعر الحالي', 'الربح/الخسارة']
         st.dataframe(df_portfolio[display_cols].set_index('السهم'), use_container_width=True)
 
     with st.expander("➕ إضافة عملية شراء جديدة"):
