@@ -4,7 +4,5 @@ ta
 twilio
 investpy
 streamlit
-transformers
-torch
-sentencepiece
 gnews
+requests
