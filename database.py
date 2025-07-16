@@ -27,4 +27,48 @@ def create_table(conn):
     except sqlite3.Error as e:
         print(e)
 
-def add_transaction(
+def add_transaction(conn, transaction):
+    """إضافة معاملة شراء جديدة إلى المحفظة."""
+    sql = ''' INSERT INTO portfolio(symbol,quantity,buy_price,commission,buy_date)
+              VALUES(?,?,?,?,?) '''
+    cur = conn.cursor()
+    cur.execute(sql, transaction)
+    conn.commit()
+    return cur.lastrowid
+
+def get_portfolio(conn):
+    """استرجاع كل الأسهم من المحفظة مع السعر اليدوي."""
+    cur = conn.cursor()
+    cur.execute("SELECT id, symbol, quantity, buy_price, commission, buy_date, manual_price FROM portfolio")
+    rows = cur.fetchall()
+    
+    portfolio_list = []
+    for row in rows:
+        portfolio_list.append({
+            "id": row[0],
+            "السهم": row[1],
+            "الكمية": row[2],
+            "سعر الشراء": row[3],
+            "العمولة": row[4],
+            "تاريخ الشراء": row[5],
+            "السعر اليدوي": row[6]
+        })
+    return portfolio_list
+
+def update_manual_price(conn, price_data):
+    """تحديث السعر اليدوي لسهم معين."""
+    sql = ''' UPDATE portfolio
+              SET manual_price = ?
+              WHERE id = ?'''
+    cur = conn.cursor()
+    cur.execute(sql, price_data)
+    conn.commit()
+
+def clear_manual_price(conn, stock_id):
+    """مسح السعر اليدوي والعودة للسعر التلقائي."""
+    sql = ''' UPDATE portfolio
+              SET manual_price = NULL
+              WHERE id = ?'''
+    cur = conn.cursor()
+    cur.execute(sql, (stock_id,))
+    conn.commit()
