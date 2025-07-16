@@ -78,13 +78,13 @@ with tab1:
                 df_portfolio.loc[i, 'الربح/الخسارة'] = "N/A"
         
         # عرض ملخص المحفظة
-        st.metric("القيمة الإجمالية للمحفظة", f"{df_portfolio.apply(lambda x: x['الكمية'] * float(x['السعر الحالي']) if x['السعر الحالي'] != 'N/A' else 0, axis=1).sum():.2f} ريال")
+        st.metric("القيمة الإجمالية للمحفظة", f"{df_portfolio.apply(lambda x: x['الكمية'] * float(x['السعر الحالي']) if x['السعر الحالي'] not in ['N/A', 'خطأ'] else 0, axis=1).sum():.2f} ريال")
 
         # إضافة أعمدة التعديل
         df_portfolio['تعديل السعر'] = [False] * len(df_portfolio)
         edited_df = st.data_editor(df_portfolio, 
                                    column_config={"تعديل السعر": st.column_config.CheckboxColumn(required=True)},
-                                   disabled=['السهم', 'الكمية', 'سعر الشراء', 'العمولة', 'تاريخ الشراء', 'الربح/الخسارة'],
+                                   disabled=['السهم', 'الكمية', 'سعر الشراء', 'العمولة', 'تاريخ الشراء', 'الربح/الخسارة', 'مصدر السعر'],
                                    hide_index=True)
         
         # التحقق من أي سهم تم تحديد خانة "تعديل السعر" له
@@ -103,7 +103,6 @@ with tab1:
 
     # --- نموذج الإضافة ---
     with st.expander("➕ إضافة عملية شراء جديدة"):
-        # ... الكود كما هو ...
         with st.form("new_transaction_form", clear_on_submit=True):
             config = configparser.ConfigParser()
             config.read('config.ini')
