@@ -17,18 +17,20 @@ if conn is not None:
 # --- تعريف الوظائف التحليلية ---
 @st.cache_data(ttl="10m")
 def get_stock_data(symbol):
+    """يجلب بيانات السهم ويحسب المؤشرات."""
     try:
         data = yf.download(symbol, period="1y", progress=False, auto_adjust=True)
         if data.empty:
-            return None
+            return None, f"لم يتم العثور على بيانات للسهم {symbol}"
         
+        # حساب المؤشرات
         data['RSI'] = ta.momentum.RSIIndicator(close=data['Close']).rsi()
         macd = ta.trend.MACD(close=data['Close'])
         data['MACD'] = macd.macd()
         data['MACD_signal'] = macd.macd_signal()
-        return data
-    except Exception:
-        return None
+        return data, None
+    except Exception as e:
+        return None, str(e)
 
 # --- تصميم الواجهة باستخدام علامات التبويب ---
 tab1, tab2, tab3 = st.tabs(["محفظتي", "نظرة على السوق", "فرص استثمارية (AI)"])
@@ -36,6 +38,11 @@ tab1, tab2, tab3 = st.tabs(["محفظتي", "نظرة على السوق", "فر�
 # --- التبويب الأول: محفظتي ---
 with tab1:
     st.header("محفظتي الاستثمارية")
+    
+    if st.button("🔄 تحديث أسعار المحفظة"):
+        st.cache_data.clear() # مسح الكاش لإجبار التحديث
+        st.rerun()
+
     portfolio_data = db.get_portfolio(conn)
 
     if not portfolio_data:
@@ -43,9 +50,16 @@ with tab1:
     else:
         total_investment = 0.0
         current_value = 0.0
+        error_messages = []
+
         for stock in portfolio_data:
-            stock_data_live = get_stock_data(stock['السهم'])
-            if stock_data_live is not None:
+            stock_data_live, error = get_stock_data(stock['السهم'])
+            if error:
+                error_messages.append(f"⚠️ فشل تحديث سعر سهم **{stock['السهم']}**. السبب: {error}")
+                stock['السعر الحالي'] = "خطأ"
+                stock['الربح/الخسارة'] = "N/A"
+                stock['نسبة التغيير %'] = "N/A"
+            else:
                 current_price = stock_data_live['Close'].iloc[-1]
                 stock['السعر الحالي'] = f"{current_price:.2f}"
                 buy_cost = (stock['الكمية'] * stock['سعر الشراء']) + stock['العمولة']
@@ -56,11 +70,12 @@ with tab1:
                 stock['نسبة التغيير %'] = f"{profit_loss_percent:.2f}"
                 total_investment += buy_cost
                 current_value += current_stock_value
-            else:
-                stock['السعر الحالي'] = "N/A"
-                stock['الربح/الخسارة'] = "N/A"
-                stock['نسبة التغيير %'] = "N/A"
         
+        # عرض رسائل الخطأ إن وجدت
+        if error_messages:
+            for msg in error_messages:
+                st.warning(msg)
+
         if total_investment > 0:
             total_profit_loss = current_value - total_investment
             st.metric("القيمة الحالية للمحفظة", f"{current_value:.2f} ريال", f"{total_profit_loss:.2f} ريال (صافي)")
@@ -83,19 +98,26 @@ with tab1:
                 transaction = (t_symbol, t_quantity, t_buy_price, t_commission, date.today().strftime("%Y-%m-%d"))
                 db.add_transaction(conn, transaction)
                 st.success(f"تمت إضافة {t_quantity} سهم من {t_symbol} إلى محفظتك.")
+                st.cache_data.clear() # مسح الكاش بعد الإضافة
                 st.rerun()
 
 # --- التبويب الثاني: نظرة على السوق ---
 with tab2:
+    # الكود الخاص بهذا التبويب يبقى كما هو
     st.header("نظرة شاملة على السوق")
     config = configparser.ConfigParser()
     config.read('config.ini')
     symbols_list_market = config['Tadawul']['symbols'].split()
     
     market_results = []
+    # ... بقية الكود للتبويب الثاني ...
+    if st.button("🔄 تحديث بيانات السوق"):
+        st.cache_data.clear()
+        st.rerun()
+
     with st.spinner("⏳ جاري تحليل السوق..."):
         for symbol in symbols_list_market:
-            stock_data_market = get_stock_data(symbol)
+            stock_data_market, error = get_stock_data(symbol)
             if stock_data_market is not None:
                 latest_data = stock_data_market.iloc[-1]
                 rsi = latest_data['RSI']
@@ -120,6 +142,7 @@ with tab2:
         st.dataframe(df_market.set_index('السهم'), use_container_width=True)
     else:
         st.warning("لم يتم العثور على بيانات لأي سهم.")
+
 
 # --- التبويب الثالث: فرص استثمارية (AI) ---
 with tab3:
